@@ -1,0 +1,31 @@
+#!/bin/zsh
+
+SUBDOMAIN='SUBDOMAIN_VALUE'
+BASE_URL="https://$SUBDOMAIN.atlassian.net"
+
+BRANCH_NAME=$(git branch --show-current)
+ISSUE_ID_REGEX='[A-Z][A-Z0-9_]*-[1-9]\d*'
+ISSUE_ID=$(echo $BRANCH_NAME | grep -oE $ISSUE_ID_REGEX | tail -n 1)
+if [[ -z "$ISSUE_ID" ]]; then
+    exit 0
+fi
+
+ISSUE_URL="$BASE_URL/issues/$ISSUE_ID"
+
+COMMIT_SOURCE=$2
+APPLICABLE_COMMIT_SOURCE='message'
+if [[ "$COMMIT_SOURCE" != "$APPLICABLE_COMMIT_SOURCE" ]]; then
+    exit
+fi
+
+COMMIT_MSG_FILE_PATH=$1
+COMMIT_MSG=$(cat $COMMIT_MSG_FILE_PATH)
+if [[ "$COMMIT_MSG" != "$ISSUE_ID"* ]]; then
+    echo "$ISSUE_ID $COMMIT_MSG" > $COMMIT_MSG_FILE_PATH
+fi
+
+COMMIT_MSG=$(cat $COMMIT_MSG_FILE_PATH)
+echo "$COMMIT_MSG\n\n$ISSUE_URL" > $COMMIT_MSG_FILE_PATH
+if [[ "$COMMIT_MSG" != *"$ISSUE_URL" ]]; then
+    echo "$COMMIT_MSG\n\n$ISSUE_URL" > $COMMIT_MSG_FILE_PATH
+fi
