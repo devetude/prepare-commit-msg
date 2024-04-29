@@ -1,31 +1,88 @@
 #!/bin/zsh
 
-SUBDOMAIN='SUBDOMAIN_VALUE'
-BASE_URL="https://$SUBDOMAIN.atlassian.net"
+local SUBDOMAIN=''
+local BASE_URL="https://$SUBDOMAIN.atlassian.net"
 
-BRANCH_NAME=$(git branch --show-current)
-ISSUE_ID_REGEX='[A-Z][A-Z0-9_]*-[1-9]\d*'
-ISSUE_ID=$(echo $BRANCH_NAME | grep -oE $ISSUE_ID_REGEX | tail -n 1)
-if [[ -z "$ISSUE_ID" ]]; then
-    exit 0
-fi
+local EMAIL=''
+local TOKEN=''
 
-ISSUE_URL="$BASE_URL/issues/$ISSUE_ID"
+main() {
+    local COMMIT_PATH=$1
+    local COMMIT_SOURCE=$2
 
-COMMIT_SOURCE=$2
-APPLICABLE_COMMIT_SOURCE='message'
-if [[ "$COMMIT_SOURCE" != "$APPLICABLE_COMMIT_SOURCE" ]]; then
-    exit 0
-fi
+    check_commit_source $COMMIT_SOURCE
 
-COMMIT_MSG_FILE_PATH=$1
-COMMIT_MSG=$(cat $COMMIT_MSG_FILE_PATH)
-if [[ "$COMMIT_MSG" != "$ISSUE_ID"* ]]; then
-    echo "$ISSUE_ID $COMMIT_MSG" > $COMMIT_MSG_FILE_PATH
-fi
+    local ISSUE_ID=$(retrieve_issue_id)
+    exit_if_empty $ISSUE_ID
 
-COMMIT_MSG=$(cat $COMMIT_MSG_FILE_PATH)
-echo "$COMMIT_MSG\n\n$ISSUE_URL" > $COMMIT_MSG_FILE_PATH
-if [[ "$COMMIT_MSG" != *"$ISSUE_URL" ]]; then
-    echo "$COMMIT_MSG\n\n$ISSUE_URL" > $COMMIT_MSG_FILE_PATH
-fi
+    local ISSUE_SUMMARY=$(get_issue_summary)
+
+    prepend_commit_message $ISSUE_ID $ISSUE_SUMMARY $COMMIT_PATH
+    append_commit_message $ISSUE_ID $COMMIT_PATH
+}
+
+check_commit_source() {
+    local COMMIT_SOURCE=$1
+
+    local APPLICABLE_COMMIT_SOURCE='message'
+    if [[ "$COMMIT_SOURCE" != "$APPLICABLE_COMMIT_SOURCE" ]]; then
+        exit 0
+    fi
+}
+
+retrieve_issue_id() {
+    local BRANCH_NAME=$(git branch --show-current)
+    local REGEX='[A-Z][A-Z0-9_]*-[1-9]\d*'
+    local ISSUE_ID=$(echo $BRANCH_NAME | grep -oE $REGEX | tail -n 1)
+
+    echo $ISSUE_ID
+}
+
+exit_if_empty() {
+    local TEXT=$1
+
+    if [[ -z "$TEXT" ]]; then
+        exit 0
+    fi
+}
+
+get_issue_summary() {
+    local URL="$BASE_URL/rest/api/2/issue/$ISSUE_ID?fields=summary"
+    local USER="$EMAIL:$TOKEN"
+    local RESPONSE=$(
+        curl -s \
+            -r GET \
+            --url $URL \
+            -u $USER \
+            -H 'Accept: application/json'
+    )
+    local ISSUE_SUMMARY=$(echo $RESPONSE | jq -r '.fields.summary')
+
+    echo $ISSUE_SUMMARY
+}
+
+prepend_commit_message() {
+    local ISSUE_ID=$1
+    local ISSUE_SUMMARY=$2
+    local COMMIT_PATH=$3
+
+    local COMMIT_MESSAGE=$(cat $COMMIT_PATH)
+    if [[ "$COMMIT_MESSAGE" != "$ISSUE_ID"* ]]; then
+        echo "$ISSUE_ID $ISSUE_SUMMARY\n\n$COMMIT_MESSAGE" > $COMMIT_PATH
+    fi
+}
+
+append_commit_message() {
+    local ISSUE_ID=$1
+    local COMMIT_PATH=$2
+
+    local COMMIT_MESSAGE=$(cat $COMMIT_PATH)
+    local ISSUE_URL="$BASE_URL/browse/$ISSUE_ID"
+    if [[ "$COMMIT_MESSAGE" != *"$ISSUE_URL" ]]; then
+        echo "$COMMIT_MESSAGE\n\n$ISSUE_URL" > $COMMIT_PATH
+    fi
+}
+
+local COMMIT_PATH=$1
+local COMMIT_SOURCE=$2
+main $1 $2
